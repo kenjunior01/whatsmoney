@@ -10,17 +10,15 @@ interface SessionContextType {
   loading: boolean
 }
 
-const SessionContext = createContext<SessionContextType>({
-  user: null,
-  loading: true,
-})
+const SessionContext = createContext<SessionContextType | undefined>(undefined)
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
 
   useEffect(() => {
+    const supabase = createClient()
+
     const getUser = async () => {
       try {
         const {
@@ -28,7 +26,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         } = await supabase.auth.getUser()
         setUser(user)
       } catch (error) {
-        console.error("Error getting user:", error)
+        console.error("[v0] Error getting user:", error)
       } finally {
         setLoading(false)
       }
@@ -40,16 +38,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+      setLoading(false)
     })
 
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase])
+  }, [])
 
   return <SessionContext.Provider value={{ user, loading }}>{children}</SessionContext.Provider>
 }
 
 export function useSession() {
-  return useContext(SessionContext)
+  const context = useContext(SessionContext)
+  if (context === undefined) {
+    throw new Error("useSession must be used within a SessionProvider")
+  }
+  return context
 }
