@@ -1,7 +1,33 @@
-import { auth } from "@/lib/auth"
-import { NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
+import { updateSession } from "@/lib/supabase/middleware"
 
-export default auth((req) => {
+export async function middleware(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  let supabaseConfigured = false
+
+  if (supabaseUrl && supabaseAnonKey) {
+    try {
+      new URL(supabaseUrl)
+      // Verificar se não são valores placeholder
+      if (!supabaseUrl.includes("your-project") && supabaseAnonKey.length > 20) {
+        supabaseConfigured = true
+      }
+    } catch {
+      console.warn("[v0] Invalid Supabase URL format")
+    }
+  }
+
+  if (!supabaseConfigured) {
+    console.warn("[v0] Supabase not configured, allowing all access in offline mode")
+    return NextResponse.next()
+  }
+
+  // Update session with Supabase
+  const response = await updateSession(request)
+  const req = request // Assign request to req for compatibility with existing code
+
   const token = req.auth
   const isAuth = !!token
   const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
@@ -10,12 +36,12 @@ export default auth((req) => {
 
   // Allow API auth routes
   if (isApiAuthRoute) {
-    return NextResponse.next()
+    return response
   }
 
   // Allow public pages
   if (isPublicPage) {
-    return NextResponse.next()
+    return response
   }
 
   // Redirect authenticated users away from auth pages
@@ -59,8 +85,8 @@ export default auth((req) => {
     }
   }
 
-  return NextResponse.next()
-})
+  return response
+}
 
 export const config = {
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],

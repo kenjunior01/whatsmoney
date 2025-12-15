@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -13,7 +12,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Eye, EyeOff, Smartphone, Mail, Lock, User, Phone, Building } from "lucide-react"
-import { signIn } from "next-auth/react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 export default function SignUpPage() {
   const [formData, setFormData] = useState({
@@ -49,6 +48,61 @@ export default function SignUpPage() {
     }
 
     try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+      if (supabaseUrl && supabaseKey) {
+        console.log("[v0] Tentando registro com Supabase...")
+        const supabase = createClientComponentClient()
+
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              name: formData.name,
+              role: formData.role,
+              phone: formData.phone,
+              company_name: formData.companyName,
+            },
+          },
+        })
+
+        if (authError) {
+          console.error("[v0] Erro Supabase:", authError)
+          setError(authError.message)
+          setLoading(false)
+          return
+        }
+
+        if (authData.user) {
+          if (formData.role === "user") {
+            await supabase.from("host_profiles").insert({
+              user_id: authData.user.id,
+              price_per_post: 0,
+              bio: "",
+            })
+
+            await supabase.from("user_points").insert({
+              user_id: authData.user.id,
+              points: 100,
+              level: 1,
+            })
+          } else {
+            await supabase.from("company_profiles").insert({
+              user_id: authData.user.id,
+              company_name: formData.companyName || formData.name,
+              description: "",
+            })
+          }
+
+          console.log("[v0] Registro Supabase bem-sucedido")
+          router.push("/dashboard")
+          return
+        }
+      }
+
+      console.log("[v0] Usando registro offline...")
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: {
@@ -62,32 +116,37 @@ export default function SignUpPage() {
       if (!response.ok) {
         setError(data.error || "Erro ao criar conta")
       } else {
-        // Auto sign in after successful registration
-        const result = await signIn("credentials", {
-          email: formData.email,
-          password: formData.password,
-          redirect: false,
+        const loginResponse = await fetch("/api/auth/signin", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: formData.email,
+            password: formData.password,
+          }),
         })
 
-        if (result?.ok) {
+        if (loginResponse.ok) {
           router.push("/dashboard")
         } else {
           router.push("/auth/signin?message=account-created")
         }
       }
     } catch (error) {
+      console.error("[v0] Erro no registro:", error)
       setError("Erro ao criar conta")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleOAuthSignIn = (provider: string) => {
-    signIn(provider, { callbackUrl: "/dashboard" })
+  const handleOAuthSignIn = async (provider: string) => {
+    setError("OAuth não disponível no momento. Use email e senha.")
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex items-center justify-center space-x-2 mb-4">

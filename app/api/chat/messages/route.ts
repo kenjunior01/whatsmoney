@@ -1,13 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
+import { createClient } from "@/lib/supabase/server"
 import { sql } from "@/lib/db"
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const supabase = createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
 
-    if (!session?.user?.id) {
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -18,7 +20,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Missing 'with' parameter" }, { status: 400 })
     }
 
-    const userId = session.user.id
+    const userId = user.id
 
     // Get messages between current user and specified user
     const messages = await sql`

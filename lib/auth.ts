@@ -1,137 +1,93 @@
-import type { NextAuthConfig } from "next-auth"
-import Credentials from "next-auth/providers/credentials"
-import Google from "next-auth/providers/google"
-import Facebook from "next-auth/providers/facebook"
-import { sql } from "@/lib/db"
-import NextAuth from "next-auth"
+import { createClient } from "@/lib/supabase/server"
 
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(password)
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("")
+export async function getSession() {
+  const supabase = createClient()
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    return session
+  } catch (error) {
+    console.error("[v0] Error getting session:", error)
+    return null
+  }
 }
 
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const passwordHash = await hashPassword(password)
-  return passwordHash === hash
+export async function getCurrentUser() {
+  const session = await getSession()
+  if (!session?.user) return null
+
+  const supabase = createClient()
+
+  try {
+    const { data: profile } = await supabase.from("users").select("*").eq("id", session.user.id).single()
+
+    return profile
+  } catch (error) {
+    console.error("[v0] Error getting user:", error)
+    return null
+  }
 }
 
-export const config = {
-  providers: [
-    Credentials({
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+export async function signIn(email: string, password: string) {
+  const supabase = createClient()
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) throw error
+    return { success: true, user: data.user }
+  } catch (error) {
+    console.error("[v0] Sign in error:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Sign in failed" }
+  }
+}
+
+export async function signUp(email: string, password: string, name: string) {
+  const supabase = createClient()
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name,
+        },
       },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          return null
-        }
+    })
 
-        try {
-          const users = await sql`
-            SELECT id, email, password_hash, name, role, email_verified, status
-            FROM users 
-            WHERE email = ${credentials.email}
-          `
+    if (error) throw error
+    return { success: true, user: data.user }
+  } catch (error) {
+    console.error("[v0] Sign up error:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Sign up failed" }
+  }
+}
 
-          const user = users[0]
-          if (!user) {
-            return null
-          }
+export async function signOut() {
+  const supabase = createClient()
 
-          if (user.status !== "active") {
-            throw new Error("Account suspended or banned")
-          }
+  try {
+    await supabase.auth.signOut()
+    return { success: true }
+  } catch (error) {
+    console.error("[v0] Sign out error:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Sign out failed" }
+  }
+}
 
-          const isPasswordValid = await verifyPassword(credentials.password, user.password_hash)
-          if (!isPasswordValid) {
-            return null
-          }
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            emailVerified: user.email_verified,
-          }
-        } catch (error) {
-          console.error("Auth error:", error)
-          return null
-        }
-      },
-    }),
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
-    Facebook({
-      clientId: process.env.FACEBOOK_CLIENT_ID!,
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
-    }),
-  ],
-  callbacks: {
-    async signIn({ user, account }) {
-      if (account?.provider === "google" || account?.provider === "facebook") {
-        try {
-          // Check if user exists
-          const existingUsers = await sql`
-            SELECT id, status FROM users WHERE email = ${user.email}
-          `
-
-          if (existingUsers.length > 0) {
-            const existingUser = existingUsers[0]
-            if (existingUser.status !== "active") {
-              return false
-            }
-            return true
-          }
-
-          // Create new user for OAuth
-          await sql`
-            INSERT INTO users (email, name, role, email_verified, status)
-            VALUES (${user.email}, ${user.name}, 'user', true, 'active')
-          `
-          return true
-        } catch (error) {
-          console.error("OAuth sign in error:", error)
-          return false
-        }
-      }
-      return true
-    },
-    async jwt({ token, user }) {
-      if (user) {
-        token.role = user.role
-        token.emailVerified = user.emailVerified
-      }
-      return token
-    },
-    async session({ session, token }) {
-      if (token) {
-        session.user.id = token.sub!
-        session.user.role = token.role as string
-        session.user.emailVerified = token.emailVerified as boolean
-      }
-      return session
-    },
-  },
+export const auth = getSession
+export const authOptions = {
+  // Placeholder for compatibility - Supabase handles auth differently
+  providers: [],
+  callbacks: {},
   pages: {
     signIn: "/auth/signin",
     error: "/auth/error",
   },
-  session: {
-    strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-} satisfies NextAuthConfig
-
-export const { handlers, auth, signIn, signOut } = NextAuth(config)
-
-// Export authOptions for backward compatibility
-export const authOptions = config
-
-export { hashPassword, verifyPassword }
+}

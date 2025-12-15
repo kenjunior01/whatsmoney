@@ -1,10 +1,19 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { GeistSans } from "geist/font/sans"
-import { GeistMono } from "geist/font/mono"
+import { Geist } from "next/font/google"
 import "./globals.css"
-// Added SessionProvider for authentication
 import { SessionProvider } from "@/components/session-provider"
+
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+})
+
+const geistMono = Geist({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-geist-mono",
+})
 
 export const metadata: Metadata = {
   title: "WhatsMoney - Monetize seu Status do WhatsApp",
@@ -70,15 +79,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
         <meta name="theme-color" content="#16a34a" />
         <meta name="background-color" content="#ffffff" />
         <meta name="display" content="standalone" />
@@ -87,8 +89,7 @@ html {
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
       </head>
-      <body className="antialiased">
-        {/* Wrapped children with SessionProvider for authentication context */}
+      <body className="antialiased font-sans">
         <SessionProvider>{children}</SessionProvider>
       </body>
     </html>

@@ -1,9 +1,7 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
-import { signIn, getSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -13,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { Eye, EyeOff, Smartphone, Mail, Lock } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 export default function SignInPage() {
   const [email, setEmail] = useState("")
@@ -21,6 +20,7 @@ export default function SignInPage() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const supabase = createClient()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,33 +28,53 @@ export default function SignInPage() {
     setError("")
 
     try {
-      const result = await signIn("credentials", {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
-        redirect: false,
       })
 
-      if (result?.error) {
+      if (signInError) {
         setError("Email ou senha incorretos")
-      } else {
-        const session = await getSession()
-        if (session?.user?.role === "admin") {
+        return
+      }
+
+      if (data.user) {
+        // Redirecionar baseado no role do usuário
+        const { data: profile } = await supabase.from("users").select("role").eq("id", data.user.id).single()
+
+        if (profile?.role === "admin") {
           router.push("/admin")
-        } else if (session?.user?.role === "company") {
+        } else if (profile?.role === "company") {
           router.push("/dashboard/company")
         } else {
           router.push("/dashboard")
         }
+        router.refresh()
       }
     } catch (error) {
+      console.error("Login error:", error)
       setError("Erro ao fazer login")
     } finally {
       setLoading(false)
     }
   }
 
-  const handleOAuthSignIn = (provider: string) => {
-    signIn(provider, { callbackUrl: "/dashboard" })
+  const handleOAuthSignIn = async (provider: "google" | "facebook") => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+
+      if (error) {
+        setError(`Erro ao entrar com ${provider}`)
+      }
+    } catch (error) {
+      console.error("OAuth error:", error)
+      setError("Erro ao fazer login com rede social")
+    }
   }
 
   return (
